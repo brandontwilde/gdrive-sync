@@ -22,6 +22,23 @@ cd /path/to/gdrive-sync
 
 The test uses temporary directories in `/tmp/gdrive_sync_test` and will not touch your actual files.
 
+## test_lib.sh
+
+Unit tests for `sync_scripts/lib.sh` — config loading, defaults, and the
+`LOCAL_DIR` guards. Fast, no network, no sync.
+
+**What it tests:**
+- `load_config` fails clearly on a missing `config.sh`, or a missing `LOCAL_DIR` / `REMOTE_DIR`
+- Optional settings fall back to safe defaults; explicit values are not overridden
+- `require_local_dir` rejects a nonexistent path
+- `require_local_dir_not_empty` rejects an empty vault (the case that would wipe
+  the remote) and correctly treats a hidden-only directory like `.obsidian` as non-empty
+
+**How to run:**
+```bash
+./tests/test_lib.sh
+```
+
 ## test_sync_remote.sh
 
 Unit tests for `sync_scripts/sync_remote_to_local.sh`. Unlike `test_safety.sh`, these
@@ -42,6 +59,9 @@ run the real script unmodified and are fully automated — no prompts, no GUI, n
   and recovers from transient failures
 - Success detection: an rclone run that exits 0 but prints `ERROR` lines (rclone's own
   internal retries) is treated as success, not retried
+- Config guards: refuses to pull into a nonexistent `LOCAL_DIR` (without creating it),
+  still allows an empty one (a first-run pull), exits non-zero on a missing `config.sh`,
+  and applies defaults for absent settings
 
 **How to run:**
 ```bash

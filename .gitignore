@@ -1,2 +1,5 @@
 systemd_units/
 logrotate/
+
+# Per-machine config. Copy config.sh.example to config.sh and edit it there.
+config.sh

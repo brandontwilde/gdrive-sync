@@ -78,6 +78,14 @@ build_fake_project() {
     cp "$SCRIPT_UNDER_TEST" "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh"
     chmod +x "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh"
 
+    # lib.sh lives next to the script under test
+    if [ -f "$(dirname "$SCRIPT_UNDER_TEST")/lib.sh" ]; then
+        cp "$(dirname "$SCRIPT_UNDER_TEST")/lib.sh" "$PROJ_DIR/sync_scripts/lib.sh"
+    fi
+
+    # The sync tests need a non-empty local dir; the guard tests override this.
+    echo "seed" > "$LOCAL_DIR/seed.md"
+
     # Test config: same variable names as the real config.sh, all paths in /tmp.
     # RETRY_DELAY=0 keeps the retry tests fast.
     cat > "$PROJ_DIR/config.sh" <<EOF
@@ -510,6 +518,120 @@ test_noisy_success_is_not_a_failure() {
 }
 
 # ----------------------------------------------------------------------------
+# Tests: config guards
+# ----------------------------------------------------------------------------
+
+test_refuses_when_local_dir_missing() {
+    start_test "Refuses to sync when LOCAL_DIR does not exist"
+    reset_state
+
+    local saved="$LOCAL_DIR.saved"
+    mv "$LOCAL_DIR" "$saved"
+
+    FAKE_RCLONE_MODE=success run_sync > /dev/null
+
+    if log_contains "ERROR: LOCAL_DIR does not exist"; then
+        pass "Logged the refusal"
+    else
+        fail "Did not log 'ERROR: LOCAL_DIR does not exist'"
+    fi
+
+    local calls
+    calls=$(rclone_call_count)
+    if [ "$calls" -eq 0 ]; then
+        pass "rclone was not invoked (no mirror into the wrong path)"
+    else
+        fail "Expected 0 rclone calls, got $calls"
+    fi
+
+    if [ -d "$LOCAL_DIR" ]; then
+        fail "LOCAL_DIR was created despite the guard"
+    else
+        pass "Did not create the missing directory"
+    fi
+
+    mv "$saved" "$LOCAL_DIR"
+}
+
+test_allows_empty_local_dir_on_pull() {
+    start_test "Allows an empty LOCAL_DIR when pulling (first-run install)"
+    reset_state
+
+    local saved
+    saved=$(mktemp -d)
+    mv "$LOCAL_DIR"/* "$saved"/ 2>/dev/null
+
+    FAKE_RCLONE_MODE=success run_sync > /dev/null
+
+    if [ "$(rclone_call_count)" -eq 1 ]; then
+        pass "Pull proceeded into the empty directory"
+    else
+        fail "Expected 1 rclone call, got $(rclone_call_count)"
+    fi
+
+    mv "$saved"/* "$LOCAL_DIR"/ 2>/dev/null
+    rmdir "$saved"
+}
+
+test_missing_config_is_fatal() {
+    start_test "Exits with a clear error when config.sh is missing"
+    reset_state
+
+    mv "$PROJ_DIR/config.sh" "$PROJ_DIR/config.sh.saved"
+
+    local rc
+    rc=$(FAKE_RCLONE_MODE=success run_sync)
+
+    if [ "$rc" -ne 0 ]; then
+        pass "Exited non-zero ($rc)"
+    else
+        fail "Expected non-zero exit, got 0"
+    fi
+
+    if grep -q "no config at" "$TEST_ROOT/stderr"; then
+        pass "Explained the problem on stderr"
+    else
+        fail "stderr lacked a clear message: $(cat "$TEST_ROOT/stderr")"
+    fi
+
+    if [ "$(rclone_call_count)" -eq 0 ]; then
+        pass "rclone was not invoked"
+    else
+        fail "Expected 0 rclone calls, got $(rclone_call_count)"
+    fi
+
+    mv "$PROJ_DIR/config.sh.saved" "$PROJ_DIR/config.sh"
+}
+
+test_defaults_applied_for_missing_settings() {
+    start_test "Applies defaults when optional settings are absent"
+    reset_state
+
+    # A config predating MAX_RETRIES/MAX_DELETE_COUNT, as an older install would have
+    cp "$PROJ_DIR/config.sh" "$PROJ_DIR/config.sh.saved"
+    cat > "$PROJ_DIR/config.sh" <<EOF
+LOCAL_DIR="$LOCAL_DIR"
+REMOTE_DIR="$REMOTE_DIR"
+RETRY_DELAY=0
+LOCKFILE="$LOCKFILE"
+LAST_CHANGE_FILE="$LAST_CHANGE_FILE"
+LOGFILE="$LOGFILE"
+EOF
+
+    FAKE_RCLONE_MODE=error_always run_sync 20 > /dev/null
+
+    local calls
+    calls=$(rclone_call_count)
+    if [ "$calls" -eq 5 ]; then
+        pass "MAX_RETRIES defaulted to 5 (bounded at $calls calls)"
+    else
+        fail "Expected 5 rclone calls from the default, got $calls"
+    fi
+
+    mv "$PROJ_DIR/config.sh.saved" "$PROJ_DIR/config.sh"
+}
+
+# ----------------------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------------------
 
@@ -545,6 +667,12 @@ main() {
     test_transient_error_retries_then_succeeds
     test_generic_error_retry_is_bounded
     test_noisy_success_is_not_a_failure
+
+    print_header "Config guards"
+    test_refuses_when_local_dir_missing
+    test_allows_empty_local_dir_on_pull
+    test_missing_config_is_fatal
+    test_defaults_applied_for_missing_settings
 
     print_header "Summary"
     echo "Test groups run: $TESTS_RUN"

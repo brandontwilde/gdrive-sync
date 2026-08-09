@@ -13,13 +13,27 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 check_requirements() {
     local missing_requirements=0
     
+    # config.sh is gitignored and per-machine, so seed it from the template
+    # on a fresh clone rather than failing.
+    if [[ ! -f "${SCRIPT_DIR}/config.sh" ]]; then
+        if [[ -f "${SCRIPT_DIR}/config.sh.example" ]]; then
+            cp "${SCRIPT_DIR}/config.sh.example" "${SCRIPT_DIR}/config.sh"
+            echo "Created config.sh from config.sh.example."
+            echo "Edit it to set LOCAL_DIR for this machine, then re-run this script."
+            exit 0
+        else
+            echo "Error: neither config.sh nor config.sh.example found"
+            missing_requirements=1
+        fi
+    fi
+
     # Check for required files
     local required_files=(
-        "config.sh"
+        "sync_scripts/lib.sh"
         "sync_scripts/sync_remote_to_local.sh"
         "sync_scripts/sync_local_to_remote.sh"
     )
-    
+
     echo "Checking for required files..."
     for file in "${required_files[@]}"; do
         if [[ ! -f "${SCRIPT_DIR}/${file}" ]]; then
@@ -50,8 +64,9 @@ if [ -z "$ACTUAL_USER" ]; then
     ACTUAL_USER=$(logname)
 fi
 
-# Source our configuration to get paths
-source "${SCRIPT_DIR}/config.sh"
+# Source our configuration to get paths (with defaults and validation)
+source "${SCRIPT_DIR}/sync_scripts/lib.sh"
+load_config "${SCRIPT_DIR}" || exit 1
 
 # Create log directory and file with proper permissions
 install -d -m 755 -o ${ACTUAL_USER} -g ${ACTUAL_USER} "$(dirname "$LOGFILE")"
@@ -66,9 +81,20 @@ apt install -y inotify-tools zenity
 # echo "Copying rclone configuration..."
 # cp ./rclone.conf ~/.config/rclone/rclone.conf
 
-# Create necessary directories
-echo "Creating directories..."
-mkdir -p "${LOCAL_DIR}"
+# Create the sync directory. Confirm first when it doesn't exist: a typo here
+# is silent, and the sync scripts will (correctly) refuse to run against a path
+# that isn't the real vault.
+if [ ! -d "${LOCAL_DIR}" ]; then
+    echo ""
+    echo "LOCAL_DIR does not exist: ${LOCAL_DIR}"
+    echo "If that is not the path you meant, answer no and fix LOCAL_DIR in config.sh."
+    read -r -p "Create it? [y/N] " reply
+    if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+        echo "Aborting. No changes made to ${LOCAL_DIR}."
+        exit 1
+    fi
+    mkdir -p "${LOCAL_DIR}"
+fi
 chown "${ACTUAL_USER}:${ACTUAL_USER}" "${LOCAL_DIR}"
 mkdir -p "${SCRIPT_DIR}/systemd_units"
 mkdir -p "${SCRIPT_DIR}/logrotate"
