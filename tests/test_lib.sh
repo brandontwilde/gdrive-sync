@@ -64,7 +64,7 @@ load_in_subshell() {
     local want="$1"
     (
         source "$LIB"
-        load_config "$TEST_ROOT/proj" 2> "$TEST_ROOT/stderr"
+        load_config "$TEST_ROOT/proj/config.sh" 2> "$TEST_ROOT/stderr"
         echo "rc=$?"
         [ -n "$want" ] && eval "echo \"\$$want\""
     )
@@ -185,6 +185,42 @@ EOF
     fi
 }
 
+test_config_path_precedence() {
+    start_test "config_path prefers an explicit path, then env, then XDG"
+    setup
+    source "$LIB"
+
+    local explicit env_based xdg_based home_based
+    explicit=$(GDRIVE_SYNC_CONFIG="/from/env.sh" config_path "/explicit/path.sh")
+    env_based=$(GDRIVE_SYNC_CONFIG="/from/env.sh" config_path)
+    xdg_based=$(GDRIVE_SYNC_CONFIG="" XDG_CONFIG_HOME="/xdg" config_path)
+    home_based=$(GDRIVE_SYNC_CONFIG="" XDG_CONFIG_HOME="" HOME="/home/someone" config_path)
+
+    if [ "$explicit" = "/explicit/path.sh" ]; then
+        pass "Explicit argument wins"
+    else
+        fail "Expected /explicit/path.sh, got '$explicit'"
+    fi
+
+    if [ "$env_based" = "/from/env.sh" ]; then
+        pass "GDRIVE_SYNC_CONFIG used when no argument (how the units pass it)"
+    else
+        fail "Expected /from/env.sh, got '$env_based'"
+    fi
+
+    if [ "$xdg_based" = "/xdg/gdrive-sync/config.sh" ]; then
+        pass "Falls back to XDG_CONFIG_HOME"
+    else
+        fail "Expected /xdg/gdrive-sync/config.sh, got '$xdg_based'"
+    fi
+
+    if [ "$home_based" = "/home/someone/.config/gdrive-sync/config.sh" ]; then
+        pass "Falls back to ~/.config"
+    else
+        fail "Expected /home/someone/.config/gdrive-sync/config.sh, got '$home_based'"
+    fi
+}
+
 test_require_local_dir_missing() {
     start_test "require_local_dir rejects a path that does not exist"
     setup
@@ -281,6 +317,7 @@ main() {
     test_missing_remote_dir_var
     test_defaults_applied
     test_config_values_win_over_defaults
+    test_config_path_precedence
 
     print_header "LOCAL_DIR guards"
     test_require_local_dir_missing

@@ -3,9 +3,9 @@
 #
 # These tests exercise the real script, unmodified. Two tricks make that possible:
 #
-#   1. The script resolves its config with $(dirname $(dirname $0))/config.sh, so we
-#      copy it into a throwaway project dir alongside a test config.sh that points
-#      every path (lockfile, logfile, dirs) at /tmp.
+#   1. The script is copied into a throwaway install dir alongside lib.sh, and
+#      GDRIVE_SYNC_CONFIG points at a test config that puts every path (lockfile,
+#      logfile, dirs) under /tmp. This is the same layout install.sh produces.
 #   2. A fake `rclone` is placed first on PATH, so sync behavior (slow, md5 mismatch,
 #      hard error, success) is scripted and deterministic. No network, no real Drive.
 #
@@ -18,7 +18,8 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT_UNDER_TEST="${GDRIVE_SYNC_SCRIPT:-$REPO_DIR/sync_scripts/sync_remote_to_local.sh}"
 
 TEST_ROOT="/tmp/gdrive_sync_unit_test"
-PROJ_DIR="$TEST_ROOT/proj"
+PROJ_DIR="$TEST_ROOT/install"
+CONFIG_FILE="$TEST_ROOT/config.sh"
 BIN_DIR="$TEST_ROOT/bin"
 LOCAL_DIR="$TEST_ROOT/local"
 REMOTE_DIR="$TEST_ROOT/remote"
@@ -73,14 +74,14 @@ start_test() {
 
 build_fake_project() {
     rm -rf "$TEST_ROOT"
-    mkdir -p "$PROJ_DIR/sync_scripts" "$BIN_DIR" "$LOCAL_DIR" "$REMOTE_DIR"
+    mkdir -p "$PROJ_DIR" "$BIN_DIR" "$LOCAL_DIR" "$REMOTE_DIR"
 
-    cp "$SCRIPT_UNDER_TEST" "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh"
-    chmod +x "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh"
+    # Mirror the install layout: script and lib.sh side by side
+    cp "$SCRIPT_UNDER_TEST" "$PROJ_DIR/sync_remote_to_local.sh"
+    chmod +x "$PROJ_DIR/sync_remote_to_local.sh"
 
-    # lib.sh lives next to the script under test
     if [ -f "$(dirname "$SCRIPT_UNDER_TEST")/lib.sh" ]; then
-        cp "$(dirname "$SCRIPT_UNDER_TEST")/lib.sh" "$PROJ_DIR/sync_scripts/lib.sh"
+        cp "$(dirname "$SCRIPT_UNDER_TEST")/lib.sh" "$PROJ_DIR/lib.sh"
     fi
 
     # The sync tests need a non-empty local dir; the guard tests override this.
@@ -88,7 +89,7 @@ build_fake_project() {
 
     # Test config: same variable names as the real config.sh, all paths in /tmp.
     # RETRY_DELAY=0 keeps the retry tests fast.
-    cat > "$PROJ_DIR/config.sh" <<EOF
+    cat > "$CONFIG_FILE" <<EOF
 LOCAL_DIR="$LOCAL_DIR"
 REMOTE_DIR="$REMOTE_DIR"
 RETRY_DELAY=0
@@ -166,7 +167,8 @@ run_sync() {
     local tmo="${1:-30}"
     PATH="$BIN_DIR:$PATH" \
     FAKE_RCLONE_CALLS="$CALLS_FILE" \
-        timeout "$tmo" "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh" \
+    GDRIVE_SYNC_CONFIG="$CONFIG_FILE" \
+        timeout "$tmo" "$PROJ_DIR/sync_remote_to_local.sh" \
         > "$TEST_ROOT/stdout" 2> "$TEST_ROOT/stderr"
     echo $?
 }
@@ -174,7 +176,8 @@ run_sync() {
 run_sync_bg() {
     PATH="$BIN_DIR:$PATH" \
     FAKE_RCLONE_CALLS="$CALLS_FILE" \
-        "$PROJ_DIR/sync_scripts/sync_remote_to_local.sh" \
+    GDRIVE_SYNC_CONFIG="$CONFIG_FILE" \
+        "$PROJ_DIR/sync_remote_to_local.sh" \
         > "$TEST_ROOT/stdout" 2> "$TEST_ROOT/stderr" &
     echo $!
 }
@@ -577,7 +580,7 @@ test_missing_config_is_fatal() {
     start_test "Exits with a clear error when config.sh is missing"
     reset_state
 
-    mv "$PROJ_DIR/config.sh" "$PROJ_DIR/config.sh.saved"
+    mv "$CONFIG_FILE" "$CONFIG_FILE.saved"
 
     local rc
     rc=$(FAKE_RCLONE_MODE=success run_sync)
@@ -600,7 +603,7 @@ test_missing_config_is_fatal() {
         fail "Expected 0 rclone calls, got $(rclone_call_count)"
     fi
 
-    mv "$PROJ_DIR/config.sh.saved" "$PROJ_DIR/config.sh"
+    mv "$CONFIG_FILE.saved" "$CONFIG_FILE"
 }
 
 test_defaults_applied_for_missing_settings() {
@@ -608,8 +611,8 @@ test_defaults_applied_for_missing_settings() {
     reset_state
 
     # A config predating MAX_RETRIES/MAX_DELETE_COUNT, as an older install would have
-    cp "$PROJ_DIR/config.sh" "$PROJ_DIR/config.sh.saved"
-    cat > "$PROJ_DIR/config.sh" <<EOF
+    cp "$CONFIG_FILE" "$CONFIG_FILE.saved"
+    cat > "$CONFIG_FILE" <<EOF
 LOCAL_DIR="$LOCAL_DIR"
 REMOTE_DIR="$REMOTE_DIR"
 RETRY_DELAY=0
@@ -628,7 +631,7 @@ EOF
         fail "Expected 5 rclone calls from the default, got $calls"
     fi
 
-    mv "$PROJ_DIR/config.sh.saved" "$PROJ_DIR/config.sh"
+    mv "$CONFIG_FILE.saved" "$CONFIG_FILE"
 }
 
 # ----------------------------------------------------------------------------

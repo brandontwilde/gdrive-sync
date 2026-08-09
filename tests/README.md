@@ -30,6 +30,8 @@ Unit tests for `sync_scripts/lib.sh` — config loading, defaults, and the
 **What it tests:**
 - `load_config` fails clearly on a missing `config.sh`, or a missing `LOCAL_DIR` / `REMOTE_DIR`
 - Optional settings fall back to safe defaults; explicit values are not overridden
+- `config_path` resolves in the right order: explicit argument, then
+  `GDRIVE_SYNC_CONFIG` (how the systemd units pass it), then `~/.config/gdrive-sync/`
 - `require_local_dir` rejects a nonexistent path
 - `require_local_dir_not_empty` rejects an empty vault (the case that would wipe
   the remote) and correctly treats a hidden-only directory like `.obsidian` as non-empty
@@ -45,9 +47,10 @@ Unit tests for `sync_scripts/sync_remote_to_local.sh`. Unlike `test_safety.sh`, 
 run the real script unmodified and are fully automated — no prompts, no GUI, no network.
 
 **How it works:**
-- The script is copied into a throwaway project dir at `/tmp/gdrive_sync_unit_test`
-  alongside a test `config.sh`, so the script's `$(dirname $(dirname $0))/config.sh`
-  lookup picks up test paths instead of your real vault and log file.
+- The script is copied into a throwaway install dir at `/tmp/gdrive_sync_unit_test`
+  alongside `lib.sh` — the same layout `install.sh` produces — and
+  `GDRIVE_SYNC_CONFIG` points at a test config, so it uses test paths instead of
+  your real vault and log file.
 - A fake `rclone` is placed first on `PATH`, so sync outcomes (slow, md5 mismatch,
   quota error, noisy success) are scripted and deterministic.
 

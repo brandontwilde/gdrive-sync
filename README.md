@@ -23,48 +23,71 @@ Keep a local folder in sync with a folder in Google Drive
 
    The configuration will be saved to `~/.config/rclone/rclone.conf`. This location is important as the sync services are configured to use your user's rclone configuration file.
 
-3. **Create your configuration:**
-   ```bash
-   cp config.sh.example config.sh
-   ```
-   Then edit `config.sh` to customize:
-   - `LOCAL_DIR`: Your local directory to sync
-   - `REMOTE_DIR`: Your rclone-assigned remote name, plus the folder name, in the format "remote:folder"
-   - Other settings like sync delays and log locations
-
-   `config.sh` is gitignored, because it holds per-machine paths. Tracking it
-   would tie every install to one shared file, so a `git pull` or a branch
-   checkout could silently repoint a running sync at the wrong directory.
-   `config.sh.example` is the tracked template.
-
-   If you run this on more than one machine, two values should match everywhere:
-   - `REMOTE_DIR` — machines pointed at different folders are not syncing with
-     each other, just keeping separate backups
-   - `MAX_DELETE_COUNT` — the weakest guard governs, since a deletion on one
-     machine propagates to the rest
-
-   Anything else, including `LOCAL_DIR`, is safe to set per machine.
-
-4. **Make scripts executable:**
+3. **Make scripts executable:**
    ```bash
    chmod +x install.sh uninstall.sh
    ```
 
-5. **Run the installation:**
+4. **Run the installation:**
    ```bash
    sudo ./install.sh
    ```
-   This will:
+   The first run creates `~/.config/gdrive-sync/config.sh` from the template and
+   stops so you can edit it:
+   - `LOCAL_DIR`: Your local directory to sync
+   - `REMOTE_DIR`: Your rclone-assigned remote name, plus the folder name, in the format "remote:folder"
+   - Other settings like sync delays and log locations
+
+5. **Run the installation again** to finish. This will:
    - Install other required packages (inotify-tools, zenity)
-   - Create necessary directories
+   - Install the sync scripts to `/usr/local/lib/gdrive-sync`
    - Set up systemd services and timer
    - Configure log rotation
+
+### Where things live
+
+| What | Where |
+|---|---|
+| Sync scripts | `/usr/local/lib/gdrive-sync/` |
+| Your configuration | `~/.config/gdrive-sync/config.sh` |
+| Log | `/var/log/gdrive-sync/gdrive_sync.log` |
+
+**Nothing runs from the clone.** The repository is source only — the services
+run the installed copy. That means editing files or switching branches in your
+working copy can't disturb a running sync, and your configuration is never at
+the mercy of a `git pull`.
+
+### Updating
+
+After pulling changes or editing the scripts, re-run the installer to deploy them:
+
+```bash
+sudo ./install.sh
+```
+
+It stops the services, replaces the installed scripts, and starts them again.
+The installed commit is recorded in `/usr/local/lib/gdrive-sync/VERSION`, so you
+can check whether your clone has moved ahead of what's actually running:
+
+```bash
+cat /usr/local/lib/gdrive-sync/VERSION && git rev-parse --short HEAD
+```
+
+### Running on more than one machine
+
+Two settings should match everywhere:
+- `REMOTE_DIR` — machines pointed at different folders are not syncing with each
+  other, just keeping separate backups
+- `MAX_DELETE_COUNT` — the weakest guard governs, since a deletion on one machine
+  propagates to the rest
+
+Anything else, including `LOCAL_DIR`, is safe to set per machine.
 
 ## How it Works
 
 - **Local to Remote Sync**: A systemd service runs continuously, monitoring your local directory for changes using inotify. When changes are detected, they are synced to Google Drive.
 - **Remote to Local Sync**: A systemd timer triggers every minute to check for changes in Google Drive and sync them to your local directory.
-- **Logging**: All sync operations are logged to the path configured in `config.sh`. Logs are automatically rotated daily.
+- **Logging**: All sync operations are logged to the path configured in `~/.config/gdrive-sync/config.sh`. Logs are automatically rotated daily.
 
 ### Safety Features
 
@@ -78,7 +101,7 @@ The sync scripts include safety checks for **local-to-remote syncs only** (remot
 Both directions also refuse to sync when `LOCAL_DIR` does not exist, rather than
 creating it. A missing path almost always means the config is wrong for this
 machine, and syncing anyway would mirror the remote into the wrong directory
-while the real vault sits unsynced. Settings absent from `config.sh` fall back to
+while the real vault sits unsynced. Settings absent from `~/.config/gdrive-sync/config.sh` fall back to
 safe defaults, so an older config can't silently disable a guard.
 
 **If sync gets disabled:** Remove `/tmp/gdrive_sync_disabled` and restart the service:
@@ -87,7 +110,7 @@ rm /tmp/gdrive_sync_disabled
 sudo systemctl restart sync_local.service
 ```
 
-You can adjust `MAX_DELETE_COUNT` in `config.sh` if 5 is too sensitive for your workflow. Check `/var/log/gdrive-sync/gdrive_sync.log` for details on any blocked syncs.
+You can adjust `MAX_DELETE_COUNT` in `~/.config/gdrive-sync/config.sh` if 5 is too sensitive for your workflow. Check `/var/log/gdrive-sync/gdrive_sync.log` for details on any blocked syncs.
 
 ## Service Management
 
