@@ -41,8 +41,9 @@ sync_from_drive_to_local() {
         fi
     fi
 
-    # Acquire lock
-    if ! flock -n "$LOCKFILE" -c :; then
+    # Acquire lock (held on fd 200 for the duration of the sync)
+    exec 200>"$LOCKFILE"
+    if ! flock -n 200; then
         echo "$(generate_prefix) WARNING: Another instance is already running, skipping sync" >> "$LOGFILE"
         return
     fi
@@ -81,7 +82,7 @@ sync_from_drive_to_local() {
     done
 
     # Release lock
-    flock -u "$LOCKFILE"
+    flock -u 200
 }
 
 sync_from_drive_to_local
