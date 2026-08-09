@@ -5,18 +5,33 @@
 # The sourcing script must define generate_prefix() before calling the guard
 # functions, since they log through it.
 
-# Load config.sh from the project root, apply defaults, and validate the
-# settings we cannot safely guess.
+# Where config.sh lives. Not in the repo: the repo is source, and an installed
+# copy of these scripts runs from elsewhere.
+#   1. an explicit path argument (tests, tooling)
+#   2. $GDRIVE_SYNC_CONFIG (set in the systemd units)
+#   3. the XDG default
+config_path() {
+    if [ -n "$1" ]; then
+        echo "$1"
+    elif [ -n "$GDRIVE_SYNC_CONFIG" ]; then
+        echo "$GDRIVE_SYNC_CONFIG"
+    else
+        echo "${XDG_CONFIG_HOME:-$HOME/.config}/gdrive-sync/config.sh"
+    fi
+}
+
+# Load the config, apply defaults, and validate the settings we cannot safely
+# guess.
 #
 # Runs before LOGFILE is known, so failures go to stderr (systemd captures it).
 # Returns non-zero if the config is unusable; callers must exit on failure.
 load_config() {
-    local project_dir="$1"
-    local config_file="$project_dir/config.sh"
+    local config_file
+    config_file="$(config_path "$1")"
 
     if [ ! -f "$config_file" ]; then
         echo "gdrive-sync: no config at $config_file" >&2
-        echo "gdrive-sync: copy config.sh.example to config.sh and set LOCAL_DIR" >&2
+        echo "gdrive-sync: run install.sh, or copy config.sh.example there and set LOCAL_DIR" >&2
         return 1
     fi
 

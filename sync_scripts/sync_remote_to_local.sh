@@ -11,10 +11,9 @@
 # - Uses lock file to prevent concurrent syncs
 # - Retries on MD5 hash mismatches
 
-# Load shared helpers, then configuration
-PROJECT_DIR="$(dirname "$(dirname "$0")")"
-source "$PROJECT_DIR/sync_scripts/lib.sh"
-load_config "$PROJECT_DIR" || exit 1
+# Load shared helpers (installed alongside this script), then configuration
+source "$(dirname "$0")/lib.sh"
+load_config || exit 1
 
 generate_prefix() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') | REMOTE |"
