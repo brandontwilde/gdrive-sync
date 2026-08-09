@@ -93,33 +93,39 @@ sync_from_local_to_drive() {
     # Log the start of the sync
     echo "$(generate_prefix) INFO: Starting sync triggered by \"$filename\" (local files: $local_file_count)" >> "$LOGFILE"
 
-    while [ $retry_count -lt $MAX_RETRIES ]; do
-        # Perform the sync
+    while :; do
+        # Perform the sync. rclone's exit status is the authoritative result:
+        # it retries internally, so its output can contain ERROR lines even when
+        # the run ultimately succeeded.
         OUTPUT=$(rclone sync --track-renames "$LOCAL_DIR" "$REMOTE_DIR" 2>&1)
-        
-        # Check for specific error conditions
-        if [[ $OUTPUT == *"corrupted on transfer"* ]] || [[ $OUTPUT == *"md5 hashes differ"* ]]; then
-            retry_count=$((retry_count + 1))
-            echo "$(generate_prefix) WARNING: MD5 mismatch detected (attempt $retry_count/$MAX_RETRIES)" >> "$LOGFILE"
-            
-            if [ $retry_count -lt $MAX_RETRIES ]; then
-                echo "$(generate_prefix) INFO: Waiting $RETRY_DELAY seconds before retry..." >> "$LOGFILE"
-                sleep $RETRY_DELAY
-                continue
-            fi
-        fi
+        RC=$?
 
-        # Log the output based on success/failure
-        if [[ $OUTPUT == *"ERROR"* ]]; then
-            echo "$(generate_prefix) ERROR: Sync failed after $retry_count retries" >> "$LOGFILE"
-            echo "$(generate_prefix) ERROR | $OUTPUT" >> "$LOGFILE"
-        else
+        if [ $RC -eq 0 ]; then
             echo "$(generate_prefix) SUCCESS: Sync completed" >> "$LOGFILE"
             if [ "$OUTPUT" != "" ]; then
                 echo "$(generate_prefix) INFO | $OUTPUT" >> "$LOGFILE"
             fi
             break
         fi
+
+        # Failed. Every failure counts toward MAX_RETRIES so a persistent error
+        # (e.g. a Drive quota block) can't spin this loop indefinitely.
+        retry_count=$((retry_count + 1))
+
+        if [[ $OUTPUT == *"corrupted on transfer"* ]] || [[ $OUTPUT == *"md5 hashes differ"* ]]; then
+            echo "$(generate_prefix) WARNING: MD5 mismatch detected (attempt $retry_count/$MAX_RETRIES)" >> "$LOGFILE"
+        else
+            echo "$(generate_prefix) WARNING: Sync error, rclone exit $RC (attempt $retry_count/$MAX_RETRIES)" >> "$LOGFILE"
+        fi
+
+        if [ $retry_count -ge $MAX_RETRIES ]; then
+            echo "$(generate_prefix) ERROR: Sync failed after $retry_count attempts" >> "$LOGFILE"
+            echo "$(generate_prefix) ERROR | $OUTPUT" >> "$LOGFILE"
+            break
+        fi
+
+        echo "$(generate_prefix) INFO: Waiting $RETRY_DELAY seconds before retry..." >> "$LOGFILE"
+        sleep $RETRY_DELAY
     done
 
     # Release lock and close descriptor
