@@ -11,8 +11,10 @@
 # - Uses lock file to prevent concurrent syncs
 # - Retries on MD5 hash mismatches
 
-# Source configuration
-source "$(dirname "$(dirname "$0")")/config.sh"
+# Load shared helpers, then configuration
+PROJECT_DIR="$(dirname "$(dirname "$0")")"
+source "$PROJECT_DIR/sync_scripts/lib.sh"
+load_config "$PROJECT_DIR" || exit 1
 
 generate_prefix() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') | REMOTE |"
@@ -27,6 +29,11 @@ sync_from_drive_to_local() {
     get_timestamp() {
         date +%s%N
     }
+
+    # An absent LOCAL_DIR means the config is wrong for this machine. Syncing
+    # anyway would create it and mirror the remote into the wrong place.
+    # (An *empty* LOCAL_DIR is fine here - that's a first-run pull.)
+    require_local_dir || return 1
 
     # Check if there are pending local changes
     if [ -f "$LAST_CHANGE_FILE" ]; then

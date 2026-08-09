@@ -13,8 +13,10 @@
 # - Uses lock file to prevent concurrent syncs
 # - Retries on MD5 hash mismatches
 
-# Source configuration
-source "$(dirname "$(dirname "$0")")/config.sh"
+# Load shared helpers, then configuration
+PROJECT_DIR="$(dirname "$(dirname "$0")")"
+source "$PROJECT_DIR/sync_scripts/lib.sh"
+load_config "$PROJECT_DIR" || exit 1
 
 generate_prefix() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') | LOCAL |"
@@ -33,6 +35,12 @@ sync_from_local_to_drive() {
         echo "$(generate_prefix) WARNING: Local-to-remote sync is disabled. Remove $SYNC_DISABLED_FILE to re-enable." >> "$LOGFILE"
         return
     fi
+
+    # Never push from a directory that is missing or empty. Either state looks
+    # identical to "the user deleted the whole vault", and pushing it would
+    # propagate that to Drive and on to every other machine.
+    require_local_dir || return
+    require_local_dir_not_empty || return
 
     # Create lockfile if it doesn't exist
     touch "$LOCKFILE"

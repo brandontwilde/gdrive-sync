@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# config.sh.example - Template for config.sh
+#
+# Copy this to config.sh and set LOCAL_DIR for this machine:
+#   cp config.sh.example config.sh
+#
+# config.sh itself is gitignored. It holds per-machine paths, so tracking it
+# would couple every install to one shared file - which is how two machines
+# drift apart, and how a branch checkout can silently repoint a live sync.
+#
+# WARNING: This file is read by the sync scripts while they are running.
+# Changes to this file will take effect immediately.
+# Be careful when modifying paths while syncing is active as it could
+# lead to unexpected behavior. It's safer to stop the services first:
+#   sudo systemctl stop sync_local.service sync_remote.timer
+
+# ============================================================================
+# Per-machine settings
+# ============================================================================
+# The local directory to sync. This is the one value that legitimately differs
+# between machines - though keeping the same name everywhere makes commands
+# copy-pasteable between them.
+LOCAL_DIR="$HOME/obsidian-vault"
+
+# ============================================================================
+# Shared settings - keep these identical on every machine
+# ============================================================================
+# The rclone remote and folder, in "remote_name:folder" format. Every machine
+# must point at the same folder, or they are not syncing with each other - just
+# keeping separate backups that look fine until a note fails to cross over.
+# "remote_name" is the name you gave the remote in `rclone config`, so it must
+# also match in each machine's ~/.config/rclone/rclone.conf.
+REMOTE_DIR="gdrive_obsidian:Obsidian"
+
+# Prompt before a local-to-remote sync deletes more than this many files.
+# Worth keeping consistent: in a multi-machine setup the weakest guard governs,
+# since one machine deleting from the remote propagates to all the others.
+MAX_DELETE_COUNT=5
+
+# ============================================================================
+# Sync behavior - safe to differ between machines
+# ============================================================================
+RETRY_DELAY=5      # Seconds to wait between retry attempts
+MAX_RETRIES=5      # Maximum number of retries on sync errors
+DEBOUNCE_DELAY=4   # Seconds to wait after file change before syncing (prevents rapid syncs)
+
+# ============================================================================
+# System files - safe to differ between machines
+# ============================================================================
+SYNC_DISABLED_FILE="/tmp/gdrive_sync_disabled"  # Created when user cancels abnormal sync
+LOCKFILE="/tmp/gdrive_sync.lock"
+LAST_CHANGE_FILE="/tmp/gdrive_last_change"
+LOGFILE="/var/log/gdrive-sync/gdrive_sync.log"

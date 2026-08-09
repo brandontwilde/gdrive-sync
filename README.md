@@ -23,11 +23,27 @@ Keep a local folder in sync with a folder in Google Drive
 
    The configuration will be saved to `~/.config/rclone/rclone.conf`. This location is important as the sync services are configured to use your user's rclone configuration file.
 
-3. **Review configuration:**
-   Edit `config.sh` to customize:
+3. **Create your configuration:**
+   ```bash
+   cp config.sh.example config.sh
+   ```
+   Then edit `config.sh` to customize:
    - `LOCAL_DIR`: Your local directory to sync
    - `REMOTE_DIR`: Your rclone-assigned remote name, plus the folder name, in the format "remote:folder"
    - Other settings like sync delays and log locations
+
+   `config.sh` is gitignored, because it holds per-machine paths. Tracking it
+   would tie every install to one shared file, so a `git pull` or a branch
+   checkout could silently repoint a running sync at the wrong directory.
+   `config.sh.example` is the tracked template.
+
+   If you run this on more than one machine, two values should match everywhere:
+   - `REMOTE_DIR` — machines pointed at different folders are not syncing with
+     each other, just keeping separate backups
+   - `MAX_DELETE_COUNT` — the weakest guard governs, since a deletion on one
+     machine propagates to the rest
+
+   Anything else, including `LOCAL_DIR`, is safe to set per machine.
 
 4. **Make scripts executable:**
    ```bash
@@ -57,6 +73,13 @@ The sync scripts include safety checks for **local-to-remote syncs only** (remot
 - **Delete Confirmation**: If a sync would delete more than `MAX_DELETE_COUNT` files (default: 5), you'll get a dialog prompt to approve or cancel.
 - **Rename Detection**: Uses `rclone --track-renames` so renamed files don't count as deletions.
 - **User Dialog**: A popup asks you to confirm any sync that would delete multiple files. If you cancel, local-to-remote sync is disabled until you investigate and re-enable it.
+- **Empty Directory Guard**: Local-to-remote refuses to run when `LOCAL_DIR` is empty. An empty vault is indistinguishable from one that was just wiped, and pushing it would propagate the wipe to Drive.
+
+Both directions also refuse to sync when `LOCAL_DIR` does not exist, rather than
+creating it. A missing path almost always means the config is wrong for this
+machine, and syncing anyway would mirror the remote into the wrong directory
+while the real vault sits unsynced. Settings absent from `config.sh` fall back to
+safe defaults, so an older config can't silently disable a guard.
 
 **If sync gets disabled:** Remove `/tmp/gdrive_sync_disabled` and restart the service:
 ```bash
