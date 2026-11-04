@@ -1,11 +1,11 @@
-# gdrive-sync [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/brandonwilde/gdrive-sync)
+# gdrive-sync [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/brandontwilde/gdrive-sync)
 Keep a local folder in sync with a folder in Google Drive
 
 ## Installation
 
 1. **Clone this repository:**
    ```bash
-   git clone https://github.com/brandonwilde/gdrive-sync.git
+   git clone https://github.com/brandontwilde/gdrive-sync.git
    cd gdrive-sync
    ```
 
